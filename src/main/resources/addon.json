@@ -4,7 +4,7 @@
   "name": "ChatTime",
   "mainClass": "de.jumpingpxl.labymod.chattime.JumpingAddon",
   "description": "A small addon to display the current time in front of every message.",
-  "version": 1,
+  "version": 2,
   "category": 2,
   "icon": "http://file.jumpingpxl.de/static/JumpingChatTimeAddon.png"
 }
