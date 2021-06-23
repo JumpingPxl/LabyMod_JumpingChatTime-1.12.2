@@ -1,103 +1,282 @@
 package de.jumpingpxl.labymod.chattime.util;
 
+import com.google.common.collect.Sets;
 import com.google.gson.JsonObject;
-import de.jumpingpxl.labymod.chattime.JumpingAddon;
-import lombok.Getter;
-import net.labymod.settings.elements.*;
+import de.jumpingpxl.labymod.chattime.ChatTime;
+import de.jumpingpxl.labymod.chattime.util.elements.BetterBooleanElement;
+import de.jumpingpxl.labymod.chattime.util.elements.SpacerElement;
+import de.jumpingpxl.labymod.chattime.util.elements.formatting.Format;
+import de.jumpingpxl.labymod.chattime.util.elements.formatting.FormatElement;
+import de.jumpingpxl.labymod.chattime.util.elements.style.StyleElement;
+import net.labymod.settings.elements.ControlElement;
+import net.labymod.settings.elements.HeaderElement;
+import net.labymod.settings.elements.SettingsElement;
 import net.labymod.utils.Material;
+import net.minecraft.util.text.Style;
+import net.minecraft.util.text.TextComponentString;
+import net.minecraft.util.text.TextFormatting;
 
+import java.text.SimpleDateFormat;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * @author Nico (JumpingPxl) Middendorf
- * @date 21.12.2018
- */
-
-@Getter
 public class Settings {
 
-	private JumpingAddon jumpingAddon;
-	private String chatTimeFormat = "HH:mm:ss";
-	private String chatTimeStyle = "&7[&6%time%&7] &r";
-	private String hoverStyle = "&7[&6%time%&7]";
-	private boolean enabledChatTime = true;
-	private boolean enabledHover = false;
-	private boolean beforeMessage = true;
+	private static final Pattern COLOR_PATTERN = Pattern.compile("[0123456789abcdefr]");
+	private static final Pattern FORMAT_PATTERN = Pattern.compile("[lmno]");
 
-	public Settings(JumpingAddon jumpingAddon) {
-		this.jumpingAddon = jumpingAddon;
-	}
+	private final ChatTime chatTime;
+	private SimpleDateFormat dateFormat;
+	private Format format;
+	private String customFormat;
+	private String rawStyle;
+	private TextComponentString style;
+	private boolean enabledChatTime;
+	private boolean beforeMessage;
 
-	private JsonObject getConfig() {
-		return jumpingAddon.getConfig();
-	}
-
-	private void saveConfig() {
-		jumpingAddon.saveConfig();
+	public Settings(ChatTime chatTime) {
+		this.chatTime = chatTime;
 	}
 
 	public void loadConfig() {
-		chatTimeFormat = getConfig().has("format") ? getConfig().get("format").getAsString() : chatTimeFormat;
-		chatTimeStyle = getConfig().has("prefix") ? getConfig().get("prefix").getAsString() : chatTimeStyle;
-		hoverStyle = getConfig().has("hoverStyle") ? getConfig().get("hoverStyle").getAsString() : hoverStyle;
 		enabledChatTime = !getConfig().has("enabled") || getConfig().get("enabled").getAsBoolean();
-		enabledHover = getConfig().has("enabledHover") && getConfig().get("enabledHover").getAsBoolean();
 		beforeMessage = !getConfig().has("before") || getConfig().get("before").getAsBoolean();
+
+		rawStyle = getConfig().has("prefix") ? getConfig().get("prefix").getAsString()
+				: "&e┃ &6%time% &7» &r";
+		style = fromString(rawStyle);
+
+		String formatName = getConfig().has("format") ? getConfig().get("format").getAsString()
+				: Format.HOUR_MINUTE_SECOND.name();
+		Optional<Format> formatByName = Format.getFormatByName(formatName);
+		if (formatByName.isPresent()) {
+			format = formatByName.get();
+			customFormat = getConfig().has("customFormat") ?
+					getConfig().get("customFormat").getAsString()
+					: format.getFormatting();
+		} else {
+			Optional<Format> formatByValue = Format.getFormatByFormatting(formatName);
+			if (formatByValue.isPresent()) {
+				format = formatByValue.get();
+				customFormat = getConfig().has("customFormat") ? getConfig().get("customFormat")
+						.getAsString() : format.getFormatting();
+			} else {
+				format = Format.CUSTOM;
+				customFormat = formatName;
+			}
+		}
+
+		dateFormat = new SimpleDateFormat(
+				format == Format.CUSTOM ? customFormat : format.getFormatting());
 	}
 
+	public void fillSettings(List<SettingsElement> settingsElements) {
+		settingsElements.add(new HeaderElement("§eChatTime v" + chatTime.getVersion()));
+		settingsElements.add(
+				new BetterBooleanElement("§6Enabled", new ControlElement.IconData(Material.LEVER),
+						enabled -> {
+							enabledChatTime = enabled;
+							getConfig().addProperty("enabled", enabled);
+							saveConfig();
+						}, enabledChatTime));
 
-	public void fillSettings(List<SettingsElement> list) {
-		list.add(new HeaderElement("§eChatTime v" + jumpingAddon.getVersion()));
-		list.add(new HeaderElement("§6General"));
-		list.add(new BooleanElement("§6Enabled", new ControlElement.IconData(Material.LEVER), enabled -> {
-			enabledChatTime = enabled;
-			getConfig().addProperty("enabled", enabled);
+		settingsElements.add(new SpacerElement());
+		settingsElements.add(new StyleElement(this, "§6Style", Material.MAP, rawStyle, string -> {
+			this.rawStyle = string;
+			this.style = fromString(string);
+			getConfig().addProperty("prefix", string);
 			saveConfig();
-		}, enabledChatTime));
-		list.add(new StringElement("§6Style", new ControlElement.IconData(Material.EMPTY_MAP), chatTimeStyle,
-				string -> {
-					chatTimeStyle = string;
-					getConfig().addProperty("prefix", string);
-					saveConfig();
-				}));
-		list.add(new StringElement("§6Time-Formatting", new ControlElement.IconData(Material.EMPTY_MAP), chatTimeFormat,
-				string -> {
-					chatTimeFormat = string;
-					getConfig().addProperty("format", string);
-					saveConfig();
-				}));
-		list.add(new BooleanElement("§6Before Message", new ControlElement.IconData(Material.LEVER), enabled -> {
-			beforeMessage = enabled;
-			getConfig().addProperty("before", enabled);
-			saveConfig();
-		}, beforeMessage));
-		list.add(new BooleanElement("§6Hover", new ControlElement.IconData(Material.LEVER), enabled -> {
-			enabledHover = enabled;
-			getConfig().addProperty("enabledHover", enabled);
-			saveConfig();
-		}, enabledHover));
-		list.add(new StringElement("§6Hover-Style", new ControlElement.IconData(Material.EMPTY_MAP), hoverStyle,
-				string -> {
-					hoverStyle = string;
-					getConfig().addProperty("hoverStyle", string);
-					saveConfig();
-				}));
+		}));
+
+		settingsElements.add(
+				new FormatElement("§6Formatting", Material.MAP, new String[]{format.name(), customFormat},
+						array -> {
+							this.format = Format.getFormatByName(array[0]).orElse(Format.CUSTOM);
+							this.customFormat = array[1];
+							this.dateFormat = new SimpleDateFormat(
+									format == Format.CUSTOM ? customFormat : format.getFormatting());
+							getConfig().addProperty("format", format.name());
+							getConfig().addProperty("customFormat", customFormat);
+							saveConfig();
+						}));
+
+		settingsElements.add(
+				new BetterBooleanElement("§6Time as Prefix", new ControlElement.IconData(Material.LEVER),
+						enabled -> {
+							beforeMessage = enabled;
+							getConfig().addProperty("before", enabled);
+							saveConfig();
+						}, beforeMessage));
 	}
 
-	public String translateAlternateColorCodes(char altColorChar, String textToTranslate) {
-		char[] array = textToTranslate.toCharArray();
-		for (int i = 0; i < array.length - 1; i++)
-			if (array[i] == altColorChar && "0123456789AaBbCcDdEeFfKkLlMmNnOoRr".indexOf(array[i + 1]) > -1) {
+	public String getFormattedString(String string) {
+		char[] array = string.toCharArray();
+		for (int i = 0; i < array.length - 1; i++) {
+			if (array[i] == '&' && "0123456789AaBbCcDdEeFfLlMmNnOoRr".indexOf(array[i + 1]) > -1) {
 				array[i] = '§';
 				array[i + 1] = Character.toLowerCase(array[i + 1]);
 			}
+		}
 		return new String(array);
 	}
 
-	public String stripColor(char colorChar, String input) {
-		if (input == null)
-			return null;
-		return Pattern.compile("(?i)" + colorChar + "[0-9A-FK-OR]").matcher(input).replaceAll("");
+	public Format getFormat() {
+		return format;
+	}
+
+	public String getCustomFormat() {
+		return customFormat;
+	}
+
+	public SimpleDateFormat getDateFormat() {
+		return dateFormat;
+	}
+
+	public TextComponentString getStyle() {
+		return style;
+	}
+
+	public boolean isEnabledChatTime() {
+		return enabledChatTime;
+	}
+
+	public boolean isBeforeMessage() {
+		return beforeMessage;
+	}
+
+	private JsonObject getConfig() {
+		return chatTime.getConfig();
+	}
+
+	private void saveConfig() {
+		chatTime.saveConfig();
+	}
+
+	private TextComponentString fromString(String string) {
+		TextComponentString textComponent = new TextComponentString("");
+		try {
+			StringBuilder stringBuilder = new StringBuilder();
+			Set<TextFormatting> tempFormats = Sets.newHashSet();
+			TextFormatting tempColor = null;
+			for (int i = 0; i < string.length(); i++) {
+				String character = String.valueOf(string.charAt(i));
+				if (!character.equals("&")) {
+					String prevCharacter = i == 0 ? null : String.valueOf(string.charAt(i - 1));
+					if (Objects.nonNull(prevCharacter) && prevCharacter.equals("&")) {
+						Matcher colorMatcher = COLOR_PATTERN.matcher(character);
+						if (colorMatcher.find()) {
+							if (Objects.nonNull(tempColor)) {
+								buildSibling(textComponent, stringBuilder, tempFormats, tempColor);
+
+								stringBuilder = new StringBuilder();
+								tempFormats.clear();
+							}
+
+							char colorCode = string.charAt(i);
+							tempColor = getFormattingByCode(colorCode);
+						} else {
+							Matcher formatMatcher = FORMAT_PATTERN.matcher(character);
+							if (formatMatcher.find()) {
+								tempFormats.add(getFormattingByCode(string.charAt(i)));
+							} else {
+								stringBuilder.append(prevCharacter);
+							}
+						}
+					} else {
+						stringBuilder.append(character);
+					}
+				}
+
+				if (i == string.length() - 1) {
+					buildSibling(textComponent, stringBuilder, tempFormats, tempColor);
+					break;
+				}
+			}
+		} catch (Exception e) {
+			textComponent = new TextComponentString(string);
+			e.printStackTrace();
+		}
+
+		return textComponent;
+	}
+
+	private void buildSibling(TextComponentString parent, StringBuilder stringBuilder,
+	                          Set<TextFormatting> formatting, TextFormatting color) {
+		TextComponentString sibling = new TextComponentString(stringBuilder.toString());
+		Style style = sibling.getStyle();
+		style.setColor(color);
+		for (TextFormatting tempFormat : formatting) {
+			switch (tempFormat) {
+				case OBFUSCATED:
+					style.setObfuscated(true);
+					break;
+				case BOLD:
+					style.setBold(true);
+					break;
+				case STRIKETHROUGH:
+					style.setStrikethrough(true);
+					break;
+				case UNDERLINE:
+					style.setUnderlined(true);
+					break;
+				case ITALIC:
+					style.setItalic(true);
+					break;
+			}
+		}
+
+		sibling.setStyle(style);
+		parent.appendSibling(sibling);
+	}
+
+	private TextFormatting getFormattingByCode(char code) {
+		switch (code) {
+			case '0':
+				return TextFormatting.BLACK;
+			case '1':
+				return TextFormatting.DARK_BLUE;
+			case '2':
+				return TextFormatting.DARK_GREEN;
+			case '3':
+				return TextFormatting.DARK_AQUA;
+			case '4':
+				return TextFormatting.DARK_RED;
+			case '5':
+				return TextFormatting.DARK_PURPLE;
+			case '6':
+				return TextFormatting.GOLD;
+			case '7':
+				return TextFormatting.GRAY;
+			case '8':
+				return TextFormatting.DARK_GRAY;
+			case '9':
+				return TextFormatting.BLUE;
+			case 'a':
+				return TextFormatting.GREEN;
+			case 'b':
+				return TextFormatting.AQUA;
+			case 'c':
+				return TextFormatting.RED;
+			case 'd':
+				return TextFormatting.LIGHT_PURPLE;
+			case 'e':
+				return TextFormatting.YELLOW;
+			case 'k':
+				return TextFormatting.OBFUSCATED;
+			case 'l':
+				return TextFormatting.BOLD;
+			case 'm':
+				return TextFormatting.STRIKETHROUGH;
+			case 'n':
+				return TextFormatting.UNDERLINE;
+			case 'o':
+				return TextFormatting.ITALIC;
+			default:
+				return TextFormatting.WHITE;
+		}
 	}
 }
